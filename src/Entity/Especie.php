@@ -44,8 +44,8 @@ class Especie
     private $nome_ingles;
 
     /**
-     * @Assert\Length(max=600)
-     * @ORM\Column(type="string", length=600, nullable=true)
+     * @Assert\Length(max=3000)
+     * @ORM\Column(type="string", length=3000, nullable=true)
      */
     private $descricao;
 
