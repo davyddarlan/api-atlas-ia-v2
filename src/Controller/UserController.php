@@ -16,7 +16,8 @@ use App\Entity\Token;
 use Symfony\Component\HttpFoundation\RequestStack;
 use App\Service\SendEmail;
 use function Symfony\Component\String\u;
-use Symfony\Component\Uid\Uuid;
+use App\Service\GenerateFileName;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * @Route("/api/especie/user", name="especie_", format="json")
@@ -43,6 +44,7 @@ class UserController extends AbstractController
         $data = $request->request->all();
         $timeToken = new DateTime;
         $timeAccount = new DateTime;
+        $timeTermo = new DateTime;
         $hash = new TokenGenerator;
 
         $input = [
@@ -55,6 +57,7 @@ class UserController extends AbstractController
             'token' => $hash->generate(60),
             'time_token' => $timeToken->setTimestamp($timeToken->getTimestamp() + User::TEMPO_TOKEN),
             'time_account' => $timeAccount->setTimestamp($timeAccount->getTimestamp() + User::TEMPO_CONTA),
+            'confirmar_termo' => empty($data['confirmar_termo']) ? false : $data['confirmar_termo'],
             'avatar' => empty($request->files->get('avatar')) ? null : $request->files->get('avatar'),
         ];
 
@@ -75,14 +78,11 @@ class UserController extends AbstractController
         $user->setTimeToken($input['time_token']);
         $user->setTimeAccount($input['time_account']);
         $user->setDataNascimento($input['data_nascimento']);
+        $user->setConfirmarTermo($input['confirmar_termo']);
+        $user->setDataTermo($timeTermo);
 
         if ($input['avatar']) {
-            $metadadosAvatar = [
-                'hash' => Uuid::v1(),
-                'extension' => $input['avatar']->getClientOriginalExtension(),
-            ];
-
-            $avatarName = $metadadosAvatar['hash'] . '.' . $metadadosAvatar['extension'];
+            $avatarName = GenerateFileName::getFileName($input['avatar']);
 
             $user->setFileAvatar($input['avatar']);
             $user->setAvatar($avatarName);
@@ -210,6 +210,7 @@ class UserController extends AbstractController
             'sexo' => $this->getUser()->getSexo(),
             'data_nascimento' => $this->getUser()->getDataNascimento()->format('d/m/Y'),
             'roles' => $this->getUser()->getRoles(),
+            'avatar' => $this->getUser()->getAvatar(),
         ]);
     }
 
@@ -252,7 +253,7 @@ class UserController extends AbstractController
         $entityManager->flush();
         
         return new JsonResponse([
-            'message' => 'You user account was actived.'
+            'message' => 'Your user account was actived.'
         ]);
     }
 
@@ -269,11 +270,12 @@ class UserController extends AbstractController
             'sexo' => $user->getUser()->getSexo(),
             'data_nascimento' => $user->getUser()->getDataNascimento()->format('d/m/Y'),
             'roles' => $user->getUser()->getRoles(),
+            'avatar' => $user->getUser()->getAvatar(),
         ]);
     }
 
     /**
-     * @Route("/editar-perfil", name="editar_perfil", methods="PUT")
+     * @Route("/editar-perfil", name="editar_perfil", methods="POST")
      */
     public function editarPerfil(Request $request): Response
     {
@@ -284,32 +286,72 @@ class UserController extends AbstractController
             'sobrenome' => empty($data['sobrenome']) ? '' : $data['sobrenome'],
             'sexo' => empty($data['sexo']) ? '' : $data['sexo'],
             'data_nascimento' => empty($data['data_nascimento']) ? '' : DateTime::createFromFormat('d/m/Y', $data['data_nascimento']),
+            'avatar' => empty($request->files->get('avatar')) ? null : $request->files->get('avatar'),
         ];
 
         $entityManager = $this->getDoctrine()->getManager();
+        $entityManager->getConnection()->beginTransaction();
         
-        $user = $this->getUser()->getUser();
+        try {
+            $user = $this->getUser()->getUser();
 
-        $user->setPrimeiroNome($input['primeiro_nome']);
-        $user->setSobrenome($input['sobrenome']);
-        $user->setSexo($input['sexo']);
-        $user->setDataNascimento($input['data_nascimento']);
-        
+            if ($input['primeiro_nome']) {
+                $user->setPrimeiroNome($input['primeiro_nome']);
+            }
 
-        $errors = $this->validatorManager->validate($user);
+            if ($input['sobrenome']) {
+                $user->setSobrenome($input['sobrenome']);
+            }
 
-        if ($errors->hasError()) {
-            return $errors->response();
+            if ($input['sexo']) {
+                $user->setSexo($input['sexo']);
+            }
+
+            if ($input['data_nascimento']) {
+                $user->setDataNascimento($input['data_nascimento']);
+            }
+
+            if ($input['avatar']) {
+                $user->setFileAvatar($input['avatar']);
+            }    
+    
+            $errors = $this->validatorManager->validate($user);
+    
+            if ($errors->hasError()) {
+                return $errors->response();
+            }
+
+            if ($input['avatar']) {
+                $avatarName = GenerateFileName::getFileName($input['avatar']);
+                $hasAvatar = $user->getAvatar();
+
+                if ($hasAvatar) {
+                    $filesystem = new Filesystem();
+                    
+                    $filePath = $this->getParameter('public_directory_avatar') . '/' . $hasAvatar;
+                    $filesystem->remove($filePath);
+                }
+
+                $user->setAvatar($avatarName);
+                $input['avatar']->move($this->getParameter('public_directory_avatar'), $avatarName);
+            }
+
+            $entityManager->persist($user);
+            $entityManager->flush();
+
+            $entityManager->getConnection()->commit();
+        } catch (Exception $e) {
+            $entityManager->getConnection()->rollback();
+
+            throw $this->createNotFoundException($e->getMessage());
         }
-
-        $entityManager->persist($user);
-        $entityManager->flush();
 
         return new JsonResponse([
             'primeiro_nome' => $user->getPrimeiroNome(), 
             'sobrenome' => $user->getSobrenome(),
             'sexo' => $user->getSexo(),
             'roles' => $user->getRoles(),
+            'avatar' => $user->getAvatar(),
         ]);
     }
 

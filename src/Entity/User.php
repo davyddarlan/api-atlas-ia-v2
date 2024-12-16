@@ -123,6 +123,16 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
      */
     private $file_avatar;
 
+    /**
+     * @ORM\Column(type="datetime", nullable=true)
+     */
+    private $dataTermo;
+
+    /**
+     * @Assert\IsTrue(message="Para se cadastrar, você precisa aceitar os termos")
+     */
+    private $confirmarTermo;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -334,7 +344,7 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function getAvatar(): ?string
     {
-        return $this->avatar;
+        return empty($this->avatar) ? '' : $this->avatar;
     }
 
     public function setAvatar(?string $avatar): self
@@ -347,5 +357,21 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setFileAvatar(File $file_avatar)
     {
         $this->file_avatar = $file_avatar;
+    }
+
+    public function getDataTermo(): ?\DateTimeInterface
+    {
+        return $this->dataTermo;
+    }
+
+    public function setDataTermo(?\DateTimeInterface $dataTermo): self
+    {
+        $this->dataTermo = $dataTermo;
+
+        return $this;
+    }
+
+    public function setConfirmarTermo(bool $confirmarTermo) {
+        $this->confirmarTermo = $confirmarTermo;
     }
 }
